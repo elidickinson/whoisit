@@ -95,14 +95,30 @@ def _domain(domain_name, raw=False, session=None, follow_related=True, async_cli
 
 
 def domain(domain_name, raw=False, allow_insecure_ssl=False, session=None, follow_related=True):
+    from .logger import get_logger
+    log = get_logger('query')
+
     session = get_session(session, allow_insecure_ssl)
     gen = _domain(domain_name, raw, session, follow_related, None)
     resp: dict = None
+    first_request = True
 
     q: Query
     for q in gen:
-        req_resp: dict = q.request()
+        try:
+            req_resp: dict = q.request()
+        except Exception as e:
+            # If this is the first request, re-raise the exception
+            # If this is a related link request, log and send empty dict to continue with original response
+            if first_request:
+                raise
+            else:
+                log.debug(f'Failed to follow related link to {q.url}: {e}')
+                # Send empty dict so the generator continues without merging related data
+                req_resp = {}
+
         resp = gen.send(req_resp)
+        first_request = False
 
         if resp is req_resp:
             gen.close()
@@ -112,14 +128,30 @@ def domain(domain_name, raw=False, allow_insecure_ssl=False, session=None, follo
 
 
 async def domain_async(domain_name, raw=False, allow_insecure_ssl=False, async_client=None, follow_related=True):
+    from .logger import get_logger
+    log = get_logger('query')
+
     async_client = get_async_client(async_client, allow_insecure_ssl)
     gen = _domain(domain_name, raw, None, follow_related, async_client)
     resp: dict = None
+    first_request = True
 
     q: QueryAsync
     for q in gen:
-        req_resp: dict = await q.request()
+        try:
+            req_resp: dict = await q.request()
+        except Exception as e:
+            # If this is the first request, re-raise the exception
+            # If this is a related link request, log and send empty dict to continue with original response
+            if first_request:
+                raise
+            else:
+                log.debug(f'Failed to follow related link to {q.url}: {e}')
+                # Send empty dict so the generator continues without merging related data
+                req_resp = {}
+
         resp = gen.send(req_resp)
+        first_request = False
 
         # happens when raw=true
         if resp is req_resp:
