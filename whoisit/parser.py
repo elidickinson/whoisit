@@ -71,7 +71,9 @@ class Parser:
         # As a basic check every object must have at least a handle set
         if not self.parsed['handle']:
             # Permit overridden endpoints to not return a handle
-            if not self.using_overrides:
+            # Also permit missing handle if it was redacted for privacy
+            handle_redacted = self._is_field_redacted('handle')
+            if not self.using_overrides and not handle_redacted:
                 raise ParseError(
                     f'Failed to parse any meaningful data to find a '
                     f'handle in raw data: {self.raw_data}'
@@ -129,6 +131,26 @@ class Parser:
                 )
 
         return v_card_array_data_dict or None
+
+    def _is_field_redacted(self, field_name):
+        """
+        Check if a field was redacted for privacy reasons.
+        RDAP responses may include a 'redacted' array indicating which fields were removed.
+        """
+        redacted_list = self.raw_data.get('redacted', [])
+        if not redacted_list:
+            return False
+
+        for redacted_item in redacted_list:
+            if not isinstance(redacted_item, dict):
+                continue
+            # Check if this redacted item refers to the field we're looking for
+            # The prePath uses JSONPath notation, e.g., '$.handle' for the top-level handle field
+            pre_path = redacted_item.get('prePath', '')
+            if pre_path == f'$.{field_name}':
+                return True
+
+        return False
 
     def extract_handle(self):
         self.parsed['handle'] = clean(self.raw_data.get('handle', '')).upper()
